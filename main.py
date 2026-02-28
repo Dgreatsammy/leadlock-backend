@@ -1,6 +1,7 @@
 import os
 import json
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 import google.generativeai as genai
@@ -10,14 +11,24 @@ load_dotenv()
 
 # 1. SETUP CONNECTIONS
 app = FastAPI()
+
+# --- CORS MIDDLEWARE (Added for Frontend Access) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows AI Studio and other frontends to talk to your API
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 2. YOUR LEADLOCK PERSONA (The Prompt you created)
+# 2. YOUR LEADLOCK PERSONA
 LEADLOCK_PROMPT = """
 ## Identity
-You are "LeadLock AI," the primary AI revenue intelligence assistant for Nigerian real estate agents.
-[... Insert the rest of your Identity and Language Strategy here ...]
+You are "LeadLock AI," the primary AI revenue intelligence assistant for Nigerian real estate agents. 
+Your goal is to extract structured data from messy chat conversations.
 
 ## Task 1: Internal Lead Qualification
 Extract the following JSON ONLY. No markdown. No extra text.
@@ -36,12 +47,15 @@ class ManualLead(BaseModel):
     chat_text: str
     company_id: str  # The ID of the agent/company in Supabase
 
+@app.get("/")
+async def root():
+    return {"message": "LeadLock AI Backend is Live!"}
+
 @app.post("/process-lead")
 async def process_lead(data: ManualLead):
     try:
         # A. SEND TO AI
         model = genai.GenerativeModel('gemini-1.5-flash')
-        # We force JSON response mode for stability
         response = model.generate_content(
             f"{LEADLOCK_PROMPT}\n\nPROCESS THIS CHAT:\n{data.chat_text}",
             generation_config={"response_mime_type": "application/json"}
@@ -51,7 +65,6 @@ async def process_lead(data: ManualLead):
         lead_data = json.loads(response.text)
         
         # C. SAVE TO SUPABASE
-        # Map AI keys to your database table columns
         db_payload = {
             "company_id": data.company_id,
             "full_name": lead_data.get("full_name", "Unknown"),
@@ -69,10 +82,9 @@ async def process_lead(data: ManualLead):
 
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process lead")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # KEEP YOUR WEBHOOK HANDSHAKE FOR LATER
 @app.get("/webhook/whatsapp")
 async def verify(request: Request):
-    # (Existing verification logic here)
     return request.query_params.get("hub.challenge")
