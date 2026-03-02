@@ -1,14 +1,8 @@
-.env
-__pycache__/
 venv/
-.venv/n g r o k . e x e 
+__pycache__/
+*.pyc
+leadlock.db
 ngrok.exe
-node_modules/
-build/
+.env
 dist/
-coverage/
-.DS_Store
-*.log
-!.env.example
-
-.db
+node_modules/
